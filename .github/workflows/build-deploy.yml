@@ -1,0 +1,58 @@
+name: Build and Deploy Jellyfin
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - name: Set Execution Policy
+      run: |
+        Set-ExecutionPolicy -Scope Process -ExecutionPolicy Unrestricted
+      shell: powershell
+
+    - name: Clone Jellyfin Windows Build Scripts
+      run: |
+        git clone https://github.com/jellyfin/jellyfin-server-windows.git windows
+      shell: powershell
+
+    - name: Build Jellyfin
+      run: |
+        .\windows\build-jellyfin.ps1 -verbose `
+        -InstallLocation "$Env:APPDATA\Jellyfin-Server\" `
+        -InstallFFMPEG `
+        -InstallNSSM
+      shell: powershell
+
+    - name: Upload Build Artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: jellyfin-build
+        path: $Env:APPDATA\Jellyfin-Server\
+
+  deploy:
+    runs-on: windows-latest
+    needs: build
+
+    steps:
+    - name: Download Build Artifacts
+      uses: actions/download-artifact@v3
+      with:
+        name: jellyfin-build
+
+    - name: Deploy Jellyfin
+      run: |
+        $InstallPath = "C:\Jellyfin"
+        if (-not (Test-Path $InstallPath)) {
+          New-Item -ItemType Directory -Path $InstallPath
+        }
+        Copy-Item -Path .\jellyfin-build\* -Destination $InstallPath -Recurse
+        &"$InstallPath\jellyfin.exe"
+      shell: powershell
